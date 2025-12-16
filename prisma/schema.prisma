@@ -1,0 +1,345 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model schedule_blocks {
+  id          Int       @id @default(autoincrement())
+  provider_id Int
+  block_date  DateTime  @db.Date
+  reason      String?   @db.VarChar(255)
+  created_at  DateTime? @default(now())
+
+  providers providers @relation(fields: [provider_id], references: [user_id], onDelete: Cascade)
+
+  @@index([provider_id])
+}
+
+model bookings {
+  id                  Int              @id @default(autoincrement())
+  customer_id         Int
+  provider_id         Int
+  service_id          Int
+  booking_date        DateTime         @db.Date
+  start_time          DateTime         @db.Time(0)
+  end_time            DateTime         @db.Time(0)
+  status              bookings_status? @default(PENDING_PAYMENT)
+  total_amount        Decimal          @db.Decimal(15, 2)
+  cancellation_reason String?          @db.Text
+  created_at          DateTime?        @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?        @default(now()) @db.Timestamp(0)
+  users               users            @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_1")
+  providers           providers        @relation(fields: [provider_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_2")
+  services            services         @relation(fields: [service_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "bookings_ibfk_3")
+  payments            payments[]
+  reviews             reviews[]
+  sub_orders          sub_orders[]
+  voucher_usage       voucher_usage[]
+
+  @@index([customer_id], map: "customer_id")
+  @@index([provider_id], map: "provider_id")
+  @@index([service_id], map: "service_id")
+}
+
+model categories {
+  id         Int        @id @default(autoincrement())
+  name       String     @db.VarChar(100)
+  icon_url   String?    @db.VarChar(500)
+  created_at DateTime?  @default(now()) @db.Timestamp(0)
+  services   services[]
+}
+
+model conversations {
+  id           Int        @id @default(autoincrement())
+  customer_id  Int
+  provider_id  Int
+  last_message String?    @db.Text
+  updated_at   DateTime?  @default(now()) @db.Timestamp(0)
+  users        users      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "conversations_ibfk_1")
+  providers    providers  @relation(fields: [provider_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "conversations_ibfk_2")
+  messages     messages[]
+
+  @@index([customer_id], map: "customer_id")
+  @@index([provider_id], map: "provider_id")
+}
+
+model messages {
+  id              Int           @id @default(autoincrement())
+  conversation_id Int
+  sender_id       Int
+  content         String        @db.Text
+  is_read         Boolean?      @default(false)
+  created_at      DateTime?     @default(now()) @db.Timestamp(0)
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "messages_ibfk_1")
+  users           users         @relation(fields: [sender_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "messages_ibfk_2")
+
+  @@index([conversation_id], map: "conversation_id")
+  @@index([sender_id], map: "sender_id")
+}
+
+model notifications {
+  id         Int                @id @default(autoincrement())
+  user_id    Int
+  title      String             @db.VarChar(255)
+  message    String             @db.Text
+  type       notifications_type
+  is_read    Boolean?           @default(false)
+  created_at DateTime?          @default(now()) @db.Timestamp(0)
+  users      users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "notifications_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model payments {
+  id               Int              @id @default(autoincrement())
+  booking_id       Int
+  transaction_code String?          @db.VarChar(100)
+  amount           Decimal          @db.Decimal(15, 2)
+  method           payments_method
+  status           payments_status? @default(PENDING)
+  payment_time     DateTime?        @default(now()) @db.Timestamp(0)
+  bookings         bookings         @relation(fields: [booking_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "payments_ibfk_1")
+
+  @@index([booking_id], map: "booking_id")
+}
+
+model payout_requests {
+  id          Int                     @id @default(autoincrement())
+  provider_id Int
+  amount      Decimal                 @db.Decimal(15, 2)
+  bank_info   Json?
+  status      payout_requests_status? @default(PENDING)
+  created_at  DateTime?               @default(now()) @db.Timestamp(0)
+  providers   providers               @relation(fields: [provider_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "payout_requests_ibfk_1")
+
+  @@index([provider_id], map: "provider_id")
+}
+
+model providers {
+  user_id         Int                   @id
+  business_name   String                @db.VarChar(255)
+  description     String?               @db.Text
+  address         String?               @db.VarChar(255)
+  latitude        Decimal?              @db.Decimal(10, 8)
+  longitude       Decimal?              @db.Decimal(11, 8)
+  kyc_status      providers_kyc_status? @default(PENDING)
+  trust_score     Decimal?              @default(5.00) @db.Decimal(3, 2)
+  created_at      DateTime?             @default(now()) @db.Timestamp(0)
+  updated_at      DateTime?             @default(now()) @db.Timestamp(0)
+  bookings        bookings[]
+  conversations   conversations[]
+  payout_requests payout_requests[]
+  users           users                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "providers_ibfk_1")
+  schedules       schedules[]
+  services        services[]
+  wallets         wallets?
+  schedule_blocks schedule_blocks[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model reviews {
+  id                               Int       @id @default(autoincrement())
+  booking_id                       Int
+  reviewer_id                      Int
+  target_id                        Int
+  rating                           Int
+  comment                          String?   @db.Text
+  reply                            String?   @db.Text
+  created_at                       DateTime? @default(now()) @db.Timestamp(0)
+  bookings                         bookings  @relation(fields: [booking_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reviews_ibfk_1")
+  users_reviews_reviewer_idTousers users     @relation("reviews_reviewer_idTousers", fields: [reviewer_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reviews_ibfk_2")
+  users_reviews_target_idTousers   users     @relation("reviews_target_idTousers", fields: [target_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "reviews_ibfk_3")
+
+  @@index([booking_id], map: "booking_id")
+  @@index([reviewer_id], map: "reviewer_id")
+  @@index([target_id], map: "target_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model schedules {
+  id          Int       @id @default(autoincrement())
+  provider_id Int
+  day_of_week Int
+  start_time  DateTime  @db.Time(0)
+  end_time    DateTime  @db.Time(0)
+  is_day_off  Boolean?  @default(false)
+  created_at  DateTime? @default(now()) @db.Timestamp(0)
+  providers   providers @relation(fields: [provider_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "schedules_ibfk_1")
+
+  @@index([provider_id], map: "provider_id")
+}
+
+model service_images {
+  id         Int       @id @default(autoincrement())
+  service_id Int
+  image_url  String    @db.VarChar(500)
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  services   services  @relation(fields: [service_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "service_images_ibfk_1")
+
+  @@index([service_id], map: "service_id")
+}
+
+model services {
+  id             Int              @id @default(autoincrement())
+  provider_id    Int
+  category_id    Int
+  name           String           @db.VarChar(255)
+  price          Decimal          @db.Decimal(15, 2)
+  duration       Int
+  description    String?          @db.Text
+  status         services_status? @default(ACTIVE)
+  created_at     DateTime?        @default(now()) @db.Timestamp(0)
+  updated_at     DateTime?        @default(now()) @db.Timestamp(0)
+  bookings       bookings[]
+  service_images service_images[]
+  providers      providers        @relation(fields: [provider_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "services_ibfk_1")
+  categories     categories       @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "services_ibfk_2")
+
+  @@index([category_id], map: "category_id")
+  @@index([provider_id], map: "provider_id")
+}
+
+model sub_orders {
+  id         Int                @id @default(autoincrement())
+  booking_id Int
+  amount     Decimal            @db.Decimal(15, 2)
+  note       String?            @db.Text
+  status     sub_orders_status? @default(UNPAID)
+  created_at DateTime?          @default(now()) @db.Timestamp(0)
+  bookings   bookings           @relation(fields: [booking_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "sub_orders_ibfk_1")
+
+  @@index([booking_id], map: "booking_id")
+}
+
+model users {
+  id         Int        @id @default(autoincrement())
+  email      String     @unique(map: "email") @db.VarChar(255)
+  password   String     @db.VarChar(255)
+  full_name  String     @db.VarChar(100)
+  phone      String?    @db.VarChar(20)
+  avatar_url String?    @db.VarChar(500)
+  role       users_role @default(CUSTOMER)
+
+  reset_token   String?   @db.VarChar(100)
+  reset_expires DateTime? @db.Timestamp(0)
+  is_active     Boolean?  @default(false) // Sửa true thành false
+  otp_code      String?   @db.VarChar(10) // Thêm dòng này (Lưu mã OTP)
+  otp_expires   DateTime? @db.Timestamp(0) // Thêm dòng này (Lưu giờ hết hạn)
+
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  updated_at DateTime? @default(now()) @db.Timestamp(0)
+
+  bookings                           bookings[]
+  conversations                      conversations[]
+  messages                           messages[]
+  notifications                      notifications[]
+  providers                          providers?
+  reviews_reviews_reviewer_idTousers reviews[]       @relation("reviews_reviewer_idTousers")
+  reviews_reviews_target_idTousers   reviews[]       @relation("reviews_target_idTousers")
+  voucher_usage                      voucher_usage[]
+  vouchers                           vouchers[]
+}
+
+model voucher_usage {
+  id          Int       @id @default(autoincrement())
+  booking_id  Int
+  voucher_id  Int
+  customer_id Int
+  used_at     DateTime? @default(now()) @db.Timestamp(0)
+  bookings    bookings  @relation(fields: [booking_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "voucher_usage_ibfk_1")
+  vouchers    vouchers  @relation(fields: [voucher_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "voucher_usage_ibfk_2")
+  users       users     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "voucher_usage_ibfk_3")
+
+  @@index([booking_id], map: "booking_id")
+  @@index([customer_id], map: "customer_id")
+  @@index([voucher_id], map: "voucher_id")
+}
+
+model vouchers {
+  id              Int                    @id @default(autoincrement())
+  code            String                 @unique(map: "code") @db.VarChar(50)
+  discount_type   vouchers_discount_type
+  value           Decimal                @db.Decimal(15, 2)
+  min_order_price Decimal?               @default(0.00) @db.Decimal(15, 2)
+  owner_id        Int?
+  start_date      DateTime?              @db.Timestamp(0)
+  end_date        DateTime?              @db.Timestamp(0)
+  is_active       Boolean?               @default(true)
+  created_at      DateTime?              @default(now()) @db.Timestamp(0)
+  voucher_usage   voucher_usage[]
+  users           users?                 @relation(fields: [owner_id], references: [id], onUpdate: NoAction, map: "vouchers_ibfk_1")
+
+  @@index([owner_id], map: "owner_id")
+}
+
+model wallets {
+  provider_id     Int       @id
+  balance         Decimal?  @default(0.00) @db.Decimal(15, 2)
+  holding_balance Decimal?  @default(0.00) @db.Decimal(15, 2)
+  updated_at      DateTime? @default(now()) @db.Timestamp(0)
+  providers       providers @relation(fields: [provider_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "wallets_ibfk_1")
+}
+
+enum vouchers_discount_type {
+  PERCENT
+  FIXED
+}
+
+enum notifications_type {
+  BOOKING
+  SYSTEM
+  PROMOTION
+}
+
+enum payments_method {
+  VNPAY
+  MOMO
+  CASH
+  WALLET
+}
+
+enum payout_requests_status {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum sub_orders_status {
+  UNPAID
+  PAID
+}
+
+enum payments_status {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum providers_kyc_status {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum users_role {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+}
+
+enum bookings_status {
+  PENDING_PAYMENT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
+enum services_status {
+  ACTIVE
+  INACTIVE
+}
